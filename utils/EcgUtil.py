@@ -1,6 +1,11 @@
+from concurrent.futures import ProcessPoolExecutor
+
 import numpy as np
 import pyedflib
 import neurokit2 as nk
+from rich.console import Console
+
+console = Console()
 
 def calculate_rmssd(rr_intervals):
     # 计算R-R间隔差值
@@ -53,22 +58,35 @@ def filter_rr_by_change(rr_intervals, change_threshold=0.2):
 
     return rr_intervals
 
-# 计算心率和 HRV
-# 计算 HRV 和心率的正确方式
+def process_segment(i, ecg_signal, sampling_rate, segment_samples):
+    start = i * segment_samples
+    end = start + segment_samples
+    segment = ecg_signal[start:end]
+
+    try:
+        ecg_cleaned, info = nk.ecg_process(segment, sampling_rate=sampling_rate)
+        r_peaks = info["ECG_R_Peaks"]
+    except Exception as e:
+        print(f"片段 {i + 1} 处理失败: {e}")
+        return -1, -1  # 返回 None 表示该片段处理失败
+
+    if len(r_peaks) < 3:
+        return -1, -1  # 如果R波过少，返回None
+
+    rr_intervals = np.diff(r_peaks) / sampling_rate
+    filtered_rr_intervals = filter_rr_by_change(rr_intervals, change_threshold=0.2)
+
+    if len(filtered_rr_intervals) > 3:
+        avg_hr = round(60 / np.mean(filtered_rr_intervals), 2) if len(filtered_rr_intervals) > 0 else -1
+        filtered_rr_intervals_ms = np.array(filtered_rr_intervals) * 1000
+        rmssd = calculate_rmssd(filtered_rr_intervals_ms)
+        print(f"片段 {i+1}: 心率 = {avg_hr:.2f}, RMSSD = {rmssd}")
+        return avg_hr, rmssd
+    else:
+        return -1, -1  # 片段太短或数据有问题，返回None
+
 def compute_hr_hrv_30s(ecg_signal, sampling_rate):
-    """
-    计算每 30 秒的平均心率（bpm）和 HRV 指标（仅 RMSSD），
-    若 RMSSD 计算异常，则置为 -1。
-
-    参数：
-    - ecg_signal: ECG 原始信号（一维数组）
-    - sampling_rate: 采样率（Hz）
-
-    返回：
-    - hr_list: 每个 30s 片段的平均心率（bpm）数组
-    - hrv_list: 每个 30s 片段的 RMSSD 值数组
-    """
-    segment_duration = 30  # 30 秒
+    segment_duration = 30  # 30秒
     segment_samples = int(segment_duration * sampling_rate)
     total_samples = len(ecg_signal)
     n_segments = total_samples // segment_samples
@@ -76,54 +94,18 @@ def compute_hr_hrv_30s(ecg_signal, sampling_rate):
     hr_list = []
     hrv_list = []
 
-    for i in range(n_segments):
-        start = i * segment_samples
-        end = start + segment_samples
-        segment = ecg_signal[start:end]
+    # 使用进程池并行化处理每个片段
+    with ProcessPoolExecutor() as executor:
+        # 提交任务并获取结果
+        futures = [executor.submit(process_segment, i, ecg_signal, sampling_rate, segment_samples) for i in
+                   range(n_segments)]
 
-        # 处理 ECG 信号，提取 R 波
-        try:
-            # 处理 ECG 信号，去噪
-            ecg_cleaned, info = nk.ecg_process(segment, sampling_rate=sampling_rate)
-            r_peaks = info["ECG_R_Peaks"]
-        except Exception as e:
-            print(f"片段 {i + 1} 处理失败")
-            hr_list.append(-1)
-            hrv_list.append(-1)
-            continue
-
-        # 如果 R 波过少，跳过
-        if len(r_peaks) < 3:
-            hr_list.append(-1)
-            hrv_list.append(-1)
-            continue
-
-        # **计算平均心率**
-        rr_intervals = np.diff(r_peaks) / sampling_rate  # 计算 RR 间期（秒）
-
-        # 基于标准差过滤异常 R-R 间期
-        filtered_rr_intervals_filter = filter_rr_by_change(rr_intervals, change_threshold=0.2)
-
-        # 如果 RR 间期长度小于或等于 5，跳过此片段
-        if len(filtered_rr_intervals_filter) > 3:
-            # 计算平均心率
-            avg_hr = round(60 / np.mean(filtered_rr_intervals_filter), 2) if len(filtered_rr_intervals_filter) > 0 else -1
-            # **提取 RMSSD**
-            # 确保 filtered_rr_intervals_std 是一个 NumPy 数组
-            filtered_rr_intervals_filter = np.array(filtered_rr_intervals_filter)
-            # 将每个元素乘以 1000
-            filtered_rr_intervals_ms = filtered_rr_intervals_filter * 1000
-            rmssd = calculate_rmssd(filtered_rr_intervals_ms)
-            if rmssd > 200:
-                print("rmssd > 200")
-        else:
-            avg_hr = -1
-            rmssd = -1
-
-        # 存储结果
-        hr_list.append(avg_hr)
-        hrv_list.append(rmssd)
-
-        print(f"片段 {i+1}: 心率 = {avg_hr:.2f}, RMSSD = {rmssd}")
+        # 获取每个片段的处理结果
+        for future in futures:
+            result = future.result()  # 获取任务结果
+            if result != (-1, -1):  # 如果任务成功处理
+                avg_hr, rmssd = result
+                hr_list.append(avg_hr)
+                hrv_list.append(rmssd)
 
     return hr_list, hrv_list

@@ -3,6 +3,9 @@ import os
 import re
 import pyedflib
 import xml.etree.ElementTree as ET
+from rich.console import Console
+
+console = Console()
 
 def get_files(directory, extension) -> list:
     """
