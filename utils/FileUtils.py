@@ -64,7 +64,7 @@ def read_edf(file_path, channels=None):
     return signals, sampling_rates
 
 
-def save_to_csv(hr_list, hrv_list, sleep_stage_list, output_file):
+def save_hr_hrv_to_csv(hr_list, hrv_list, sleep_stage_list, output_file):
     # 写入CSV文件
     with open(output_file, mode='w', newline='') as file:
         writer = csv.writer(file)
@@ -75,6 +75,18 @@ def save_to_csv(hr_list, hrv_list, sleep_stage_list, output_file):
         # 写入数据
         for idx, (heart_rate, hrv, sleep_stage) in enumerate(zip(hr_list, hrv_list, sleep_stage_list), start=1):
             writer.writerow([idx , idx * 30, heart_rate, hrv, sleep_stage])
+
+def save_rr_to_csv(rr_list, sleep_stage_list, output_file):
+    # 写入CSV文件
+    with open(output_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+
+        # 写入标题
+        writer.writerow(["index", "timestamp", "rr", "sleep_stage"])
+
+        # 写入数据
+        for idx, (rr, sleep_stage) in enumerate(zip(rr_list, sleep_stage_list), start=1):
+            writer.writerow([idx, idx * 30, rr, sleep_stage])
 
 def find_matching_xml(edf_filename, xml_files) -> tuple:
     """

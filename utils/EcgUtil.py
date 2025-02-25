@@ -1,4 +1,5 @@
-from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 
 import numpy as np
 import pyedflib
@@ -58,6 +59,19 @@ def filter_rr_by_change(rr_intervals, change_threshold=0.2):
 
     return rr_intervals
 
+def compute_hr_hrv_by_rr(i, rr_intervals):
+    filtered_rr_intervals = filter_rr_by_change(rr_intervals, change_threshold=0.2)
+
+    if len(filtered_rr_intervals) > 5:
+        avg_hr = round(60 / np.mean(filtered_rr_intervals), 2) if len(filtered_rr_intervals) > 0 else -1
+        filtered_rr_intervals_ms = np.array(filtered_rr_intervals) * 1000
+        rmssd = calculate_rmssd(filtered_rr_intervals_ms)
+        print(f"片段 {i + 1}: 心率 = {avg_hr:.2f}, RMSSD = {rmssd}")
+        return avg_hr, rmssd
+    else:
+        return -1, -1  # 片段太短或数据有问题，返回None
+
+
 def process_segment(i, ecg_signal, sampling_rate, segment_samples):
     start = i * segment_samples
     end = start + segment_samples
@@ -68,22 +82,19 @@ def process_segment(i, ecg_signal, sampling_rate, segment_samples):
         r_peaks = info["ECG_R_Peaks"]
     except Exception as e:
         print(f"片段 {i + 1} 处理失败: {e}")
-        return -1, -1  # 返回 None 表示该片段处理失败
+        return []  # 返回 None 表示该片段处理失败
 
     if len(r_peaks) < 5:
-        return -1, -1  # 如果R波过少，返回None
+        return []  # 如果R波过少，返回None
 
     rr_intervals = np.diff(r_peaks) / sampling_rate
-    filtered_rr_intervals = filter_rr_by_change(rr_intervals, change_threshold=0.2)
 
-    if len(filtered_rr_intervals) > 5:
-        avg_hr = round(60 / np.mean(filtered_rr_intervals), 2) if len(filtered_rr_intervals) > 0 else -1
-        filtered_rr_intervals_ms = np.array(filtered_rr_intervals) * 1000
-        rmssd = calculate_rmssd(filtered_rr_intervals_ms)
-        print(f"片段 {i+1}: 心率 = {avg_hr:.2f}, RMSSD = {rmssd}")
-        return avg_hr, rmssd
-    else:
-        return -1, -1  # 片段太短或数据有问题，返回None
+    # avg_hr, rmssd = compute_hr_hrv_by_rr(i, rr_intervals)
+    # return avg_hr, rmssd
+
+    print(f"片段 {i + 1}: rr长度 = {len(rr_intervals)}")
+    rr_intervals = np.array(rr_intervals) * 1000
+    return rr_intervals
 
 def compute_hr_hrv_30s(ecg_signal, sampling_rate):
     segment_duration = 30  # 30秒
@@ -108,3 +119,26 @@ def compute_hr_hrv_30s(ecg_signal, sampling_rate):
             hrv_list.append(rmssd)
 
     return hr_list, hrv_list
+
+def compute_rr_30s(ecg_signal, sampling_rate):
+    segment_duration = 30  # 30秒
+    segment_samples = int(segment_duration * sampling_rate)
+    total_samples = len(ecg_signal)
+    n_segments = total_samples // segment_samples
+    print(f"总片段数: {n_segments}")
+    rr_list = []
+
+    max_workers = multiprocessing.cpu_count()  # 获取CPU核心数
+    # 使用进程池并行化处理每个片段
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # 提交任务并获取结果
+        futures = [executor.submit(process_segment, i, ecg_signal, sampling_rate, segment_samples) for i in
+                   range(n_segments)]
+
+        # 获取每个片段的处理结果
+        for future in futures:
+            result = future.result()  # 获取任务结果
+            rr_intervals = result
+            rr_list.append(rr_intervals)
+
+    return rr_list

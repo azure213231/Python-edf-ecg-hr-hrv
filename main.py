@@ -5,8 +5,8 @@ import numpy as np
 from rich.layout import Layout
 from rich.panel import Panel
 
-from utils.EcgUtil import compute_hr_hrv_30s
-from utils.FileUtils import get_files, read_edf, save_to_csv, find_matching_xml, extract_sleep_stages
+from utils.EcgUtil import compute_hr_hrv_30s, compute_rr_30s
+from utils.FileUtils import get_files, read_edf, find_matching_xml, extract_sleep_stages, save_rr_to_csv
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
@@ -21,7 +21,7 @@ def main():
     # output_dir = "D:\\EDF\\shhs\\test_data\\csv"
     edf_dir = "Y:\\3-AI\\1-PSG-dataSet\\nsrr\\shhs\\polysomnography\\edfs\\shhs1"
     xml_dir = "Y:\\3-AI\\1-PSG-dataSet\\nsrr\\shhs\\polysomnography\\annotations-events-profusion\\shhs1"
-    output_dir = "Y:\\3-AI\\1-PSG-dataSet\\nsrr\\shhs\\polysomnography\\csv-3-hml\\shhs1-hr-hrv"
+    output_dir = "Y:\\3-AI\\1-PSG-dataSet\\nsrr\\shhs\\polysomnography\\csv-3-hml\\shhs1-rr"
 
     edf_files = get_files(edf_dir, ".edf")
     xml_files = get_files(xml_dir, ".xml")
@@ -67,19 +67,24 @@ def main():
                 ecg_signal = signals["ECG"]
                 fs = sampling_rates["ECG"]
                 print("ECG信号长度：", len(ecg_signal), "采样率：", fs)
-                hr_list, hrv_list = compute_hr_hrv_30s(ecg_signal, fs)
+                # hr_list, hrv_list = compute_hr_hrv_30s(ecg_signal, fs)
+                # min_len = min(len(hr_list), len(hrv_list), len(sleep_stage_list))
+                # print(f"心率长度：{len(hr_list)}, HRV长度：{len(hrv_list)}，睡眠阶段长度: {len(sleep_stage_list)}")
 
-                # 假设 hr_list, hrv_list, sleep_stage_list 已经生成
-                min_len = min(len(hr_list), len(hrv_list), len(sleep_stage_list))
-                print(f"心率长度：{len(hr_list)}, HRV长度：{len(hrv_list)}，睡眠阶段长度: {len(sleep_stage_list)}")
+                rr_list = compute_rr_30s(ecg_signal, fs)
+                min_len = min(len(rr_list), len(sleep_stage_list))
+                print(f"rr_list长度：{len(rr_list)}, 睡眠阶段长度: {len(sleep_stage_list)}")
+
                 if min_len > 200:
                     print(f"使用最短长度：{min_len} 来裁剪数据")
                     # 对三个列表进行裁剪
-                    hr_list = hr_list[:min_len]
-                    hrv_list = hrv_list[:min_len]
+                    # hr_list = hr_list[:min_len]
+                    # hrv_list = hrv_list[:min_len]
+                    rr_list = rr_list[:min_len]
                     sleep_stage_list = sleep_stage_list[:min_len]
 
-                    save_to_csv(hr_list, hrv_list, sleep_stage_list, output_file)
+                    # save_hr_hrv_to_csv(hr_list, hrv_list, sleep_stage_list, output_file)
+                    save_rr_to_csv(rr_list, sleep_stage_list, output_file)
                     success_file_count += 1
                 else:
                     fail_file_count += 1
