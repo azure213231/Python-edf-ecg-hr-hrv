@@ -70,13 +70,13 @@ def process_segment(i, ecg_signal, sampling_rate, segment_samples):
         print(f"片段 {i + 1} 处理失败: {e}")
         return -1, -1  # 返回 None 表示该片段处理失败
 
-    if len(r_peaks) < 3:
+    if len(r_peaks) < 5:
         return -1, -1  # 如果R波过少，返回None
 
     rr_intervals = np.diff(r_peaks) / sampling_rate
     filtered_rr_intervals = filter_rr_by_change(rr_intervals, change_threshold=0.2)
 
-    if len(filtered_rr_intervals) > 3:
+    if len(filtered_rr_intervals) > 5:
         avg_hr = round(60 / np.mean(filtered_rr_intervals), 2) if len(filtered_rr_intervals) > 0 else -1
         filtered_rr_intervals_ms = np.array(filtered_rr_intervals) * 1000
         rmssd = calculate_rmssd(filtered_rr_intervals_ms)
@@ -103,9 +103,8 @@ def compute_hr_hrv_30s(ecg_signal, sampling_rate):
         # 获取每个片段的处理结果
         for future in futures:
             result = future.result()  # 获取任务结果
-            if result != (-1, -1):  # 如果任务成功处理
-                avg_hr, rmssd = result
-                hr_list.append(avg_hr)
-                hrv_list.append(rmssd)
+            avg_hr, rmssd = result
+            hr_list.append(avg_hr)
+            hrv_list.append(rmssd)
 
     return hr_list, hrv_list
