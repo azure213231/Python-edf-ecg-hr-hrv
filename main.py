@@ -39,7 +39,7 @@ def main():
             start_time = time.time()
 
             filepath = os.path.join(root, filename)
-            progress = round(idx / edf_file_count, 4)
+            progress = round(idx * 100.0 / edf_file_count, 2)
 
             # 更新进度
             live.update(f"处理文件 {idx}/{edf_file_count}: {filename}, progress: {round(progress, 4)}, "
@@ -50,11 +50,16 @@ def main():
             # 使用文件名作为输出CSV文件名
             output_file = os.path.join(output_dir, f"{base_filename}.csv")
             try:
+                # 检查是否已经处理过此文件
+                if os.path.exists(output_file):
+                    success_file_count += 1
+                    print(f"{filename} 文件已存在，跳过处理")
+                    continue
                 # 找到对应的xml文件
                 xml_path, xml_file = find_matching_xml(filename, xml_files)
                 if not xml_file:
                     fail_file_count += 1
-                    print(f"警告：未找到与 {filename} 对应的XML文件")
+                    print(f"未找到与 {filename} 对应的XML文件")
                     continue
                 full_xml_path = os.path.join(xml_path, xml_file)
                 sleep_stage_list = extract_sleep_stages(full_xml_path)
@@ -66,7 +71,7 @@ def main():
                 signals, sampling_rates = read_edf(filepath, channels=["ECG"])
                 ecg_signal = signals["ECG"]
                 fs = sampling_rates["ECG"]
-                print("ECG信号长度：", len(ecg_signal), "采样率：", fs)
+
                 # hr_list, hrv_list = compute_hr_hrv_30s(ecg_signal, fs)
                 # min_len = min(len(hr_list), len(hrv_list), len(sleep_stage_list))
                 # print(f"心率长度：{len(hr_list)}, HRV长度：{len(hrv_list)}，睡眠阶段长度: {len(sleep_stage_list)}")
@@ -106,7 +111,7 @@ def main():
 
             formatted_time = f"{hours}小时 {minutes}分钟 {seconds}秒"
             print(f"处理耗时: {formatted_time}")
-    print(f"处理完成")
+    print(f"处理完成, success_count: {success_file_count}, fail_count: {fail_file_count}")
 
 if __name__ == '__main__':
     main()

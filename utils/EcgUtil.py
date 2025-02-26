@@ -72,7 +72,29 @@ def compute_hr_hrv_by_rr(i, rr_intervals):
         return -1, -1  # 片段太短或数据有问题，返回None
 
 
-def process_segment(i, ecg_signal, sampling_rate, segment_samples):
+def process_hr_hrv_segment(i, ecg_signal, sampling_rate, segment_samples):
+    start = i * segment_samples
+    end = start + segment_samples
+    segment = ecg_signal[start:end]
+
+    try:
+        ecg_cleaned, info = nk.ecg_process(segment, sampling_rate=sampling_rate)
+        r_peaks = info["ECG_R_Peaks"]
+    except Exception as e:
+        print(f"片段 {i + 1} 处理失败: {e}")
+        return -1, -1  # 返回 None 表示该片段处理失败
+
+    if len(r_peaks) < 5:
+        return -1, -1  # 如果R波过少，返回None
+
+    rr_intervals = np.diff(r_peaks) / sampling_rate
+
+    avg_hr, rmssd = compute_hr_hrv_by_rr(i, rr_intervals)
+    print(f"片段 {i + 1}: 心率 = {avg_hr} , rmssd = {rmssd}")
+    return avg_hr, rmssd
+
+
+def process_rr_segment(i, ecg_signal, sampling_rate, segment_samples):
     start = i * segment_samples
     end = start + segment_samples
     segment = ecg_signal[start:end]
@@ -88,9 +110,6 @@ def process_segment(i, ecg_signal, sampling_rate, segment_samples):
         return []  # 如果R波过少，返回None
 
     rr_intervals = np.diff(r_peaks) / sampling_rate
-
-    # avg_hr, rmssd = compute_hr_hrv_by_rr(i, rr_intervals)
-    # return avg_hr, rmssd
 
     print(f"片段 {i + 1}: rr长度 = {len(rr_intervals)}")
     rr_intervals = np.array(rr_intervals) * 1000
@@ -108,7 +127,7 @@ def compute_hr_hrv_30s(ecg_signal, sampling_rate):
     # 使用进程池并行化处理每个片段
     with ProcessPoolExecutor() as executor:
         # 提交任务并获取结果
-        futures = [executor.submit(process_segment, i, ecg_signal, sampling_rate, segment_samples) for i in
+        futures = [executor.submit(process_hr_hrv_segment, i, ecg_signal, sampling_rate, segment_samples) for i in
                    range(n_segments)]
 
         # 获取每个片段的处理结果
@@ -132,7 +151,7 @@ def compute_rr_30s(ecg_signal, sampling_rate):
     # 使用进程池并行化处理每个片段
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         # 提交任务并获取结果
-        futures = [executor.submit(process_segment, i, ecg_signal, sampling_rate, segment_samples) for i in
+        futures = [executor.submit(process_rr_segment, i, ecg_signal, sampling_rate, segment_samples) for i in
                    range(n_segments)]
 
         # 获取每个片段的处理结果
